@@ -1,0 +1,8 @@
+{
+  "name": "peek",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "Peek",
+  "short_name": "Peek",
+  "description": "A tiny Instagram-style app. Text + likes + comments on Supabase; full photos stay in your browser and stream peer-to-peer.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

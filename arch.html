@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Zero-Server Stack &mdash; GitHub Pages + Supabase</title>
+<meta name="description" content="A plain-English architecture review of the zero-server stack: how GitHub Pages + Supabase remove the web server, what it does well, where it doesn't, ten managed backends compared, and how Peek uses it in practice.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%94%8C%3C/text%3E%3C/svg%3E">
+<style>
+  /* ------- Design tokens: light is the base, dark redefines only the tokens ------- */
+  :root{
+    --ground:#F5F7F6;
+    --surface:#FDFEFD;
+    --surface-2:#EFF3F1;
+    --ink:#16211D;
+    --ink-soft:#31403A;
+    --muted:#63706A;
+    --faint:#9AA49E;
+    --hairline:#E0E7E3;
+    --hairline-strong:#C9D3CE;
+    --accent:#0B6E52;
+    --accent-bright:#0E8A66;
+    --amber:#946213;
+    --wash:rgba(11,110,82,.06);
+    --wash-strong:rgba(11,110,82,.10);
+    --shadow:0 1px 2px rgba(20,33,28,.05),0 8px 30px rgba(20,33,28,.05);
+    --dot-none-bd:#B7C2BC;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --ground:#0A0F0D;
+      --surface:#111815;
+      --surface-2:#161E1A;
+      --ink:#E9EEEB;
+      --ink-soft:#C6D0CB;
+      --muted:#8E9A93;
+      --faint:#5B655F;
+      --hairline:#202A26;
+      --hairline-strong:#2C3833;
+      --accent:#37D9A2;
+      --accent-bright:#4BE6B2;
+      --amber:#D7A64C;
+      --wash:rgba(55,217,162,.07);
+      --wash-strong:rgba(55,217,162,.12);
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 34px rgba(0,0,0,.35);
+      --dot-none-bd:#3A463F;
+    }
+  }
+  /* Explicit toggle must win in both directions */
+  :root[data-theme="light"]{
+    --ground:#F5F7F6;--surface:#FDFEFD;--surface-2:#EFF3F1;--ink:#16211D;--ink-soft:#31403A;
+    --muted:#63706A;--faint:#9AA49E;--hairline:#E0E7E3;--hairline-strong:#C9D3CE;--accent:#0B6E52;
+    --accent-bright:#0E8A66;--amber:#946213;--wash:rgba(11,110,82,.06);--wash-strong:rgba(11,110,82,.10);
+    --shadow:0 1px 2px rgba(20,33,28,.05),0 8px 30px rgba(20,33,28,.05);--dot-none-bd:#B7C2BC;
+  }
+  :root[data-theme="dark"]{
+    --ground:#0A0F0D;--surface:#111815;--surface-2:#161E1A;--ink:#E9EEEB;--ink-soft:#C6D0CB;
+    --muted:#8E9A93;--faint:#5B655F;--hairline:#202A26;--hairline-strong:#2C3833;--accent:#37D9A2;
+    --accent-bright:#4BE6B2;--amber:#D7A64C;--wash:rgba(55,217,162,.07);--wash-strong:rgba(55,217,162,.12);
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 34px rgba(0,0,0,.35);--dot-none-bd:#3A463F;
+  }
+
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  @media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+
+  body{
+    margin:0;
+    background:var(--ground);
+    color:var(--ink);
+    font-family:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,"Times New Roman",serif;
+    font-size:18px;
+    line-height:1.72;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  .sans{font-family:"Segoe UI",-apple-system,system-ui,"Helvetica Neue",Arial,sans-serif}
+  .mono{font-family:"Cascadia Code","SF Mono","JetBrains Mono",Consolas,"Liberation Mono",monospace}
+
+  /* ------- Layout ------- */
+  .wrap{max-width:720px;margin:0 auto;padding:0 24px}
+  .wide{max-width:960px}
+  main{padding-bottom:6rem}
+
+  /* ------- Header / title block ------- */
+  header.paper-head{
+    border-bottom:1px solid var(--hairline);
+    background:linear-gradient(180deg,var(--wash),transparent);
+  }
+  .head-inner{padding:clamp(3rem,7vw,5.5rem) 24px clamp(2.2rem,4vw,3rem)}
+  .eyebrow{
+    font-family:"Segoe UI",-apple-system,system-ui,sans-serif;
+    font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--muted);display:flex;align-items:center;gap:.6em;margin-bottom:1.4rem;font-weight:600;
+  }
+  .eyebrow::before{content:"";width:26px;height:2px;background:var(--accent);display:inline-block;border-radius:2px}
+  h1{
+    font-size:clamp(2.4rem,6vw,3.5rem);
+    line-height:1.04;margin:0 0 .5rem;font-weight:600;letter-spacing:-.015em;
+    text-wrap:balance;color:var(--ink);
+  }
+  .subtitle{
+    font-size:clamp(1.15rem,2.6vw,1.45rem);
+    color:var(--ink-soft);font-style:italic;margin:0 0 1.8rem;max-width:34ch;line-height:1.35;
+  }
+  .byline{
+    font-family:"Segoe UI",-apple-system,system-ui,sans-serif;
+    font-size:.82rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:.35em 1.4em;
+    padding-top:1.3rem;border-top:1px solid var(--hairline);letter-spacing:.01em;
+  }
+  .byline b{color:var(--ink-soft);font-weight:600}
+
+  @media (prefers-reduced-motion:no-preference){
+    .rise{opacity:0;transform:translateY(14px);animation:rise .7s cubic-bezier(.2,.6,.2,1) forwards}
+    .rise.d1{animation-delay:.06s}.rise.d2{animation-delay:.13s}.rise.d3{animation-delay:.2s}.rise.d4{animation-delay:.27s}
+    @keyframes rise{to{opacity:1;transform:none}}
+  }
+
+  /* ------- Abstract ------- */
+  .abstract{
+    background:var(--surface);border:1px solid var(--hairline);border-radius:12px;
+    padding:1.7rem 1.8rem;margin:2.4rem 0 0;box-shadow:var(--shadow);
+  }
+  .abstract .lead{margin:0}
+  .abstract .lbl{
+    font-family:"Segoe UI",system-ui,sans-serif;font-size:.7rem;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--accent);font-weight:700;display:block;margin-bottom:.6rem;
+  }
+
+  /* ------- Table of contents ------- */
+  nav.toc{margin:2.4rem 0 1rem}
+  nav.toc .lbl{
+    font-family:"Segoe UI",system-ui,sans-serif;font-size:.7rem;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--muted);font-weight:700;margin-bottom:.7rem;
+  }
+  nav.toc ol{list-style:none;margin:0;padding:0;display:grid;gap:.15rem;counter-reset:toc}
+  nav.toc li{counter-increment:toc}
+  nav.toc a{
+    font-family:"Segoe UI",system-ui,sans-serif;font-size:.95rem;color:var(--ink-soft);
+    text-decoration:none;display:flex;align-items:baseline;gap:.8em;padding:.4rem .6rem;border-radius:7px;
+  }
+  nav.toc a::before{
+    content:counter(toc,decimal-leading-zero);color:var(--accent);font-size:.78rem;font-weight:700;
+    font-variant-numeric:tabular-nums;min-width:1.6em;
+  }
+  nav.toc a:hover{background:var(--wash);color:var(--ink)}
+
+  /* ------- Sections ------- */
+  section{scroll-margin-top:1.5rem;padding-top:2.4rem}
+  h2{
+    font-size:clamp(1.55rem,3.4vw,2.05rem);line-height:1.12;margin:0 0 .3rem;font-weight:600;
+    letter-spacing:-.01em;text-wrap:balance;display:flex;align-items:baseline;gap:.6em;
+  }
+  h2 .num{
+    font-family:"Segoe UI",system-ui,sans-serif;font-size:.85rem;font-weight:700;color:var(--accent);
+    font-variant-numeric:tabular-nums;letter-spacing:.05em;transform:translateY(-.1em);
+  }
+  h3{
+    font-size:1.16rem;margin:2.1rem 0 .2rem;font-weight:600;color:var(--ink);letter-spacing:-.005em;
+    font-family:"Segoe UI",system-ui,sans-serif;
+  }
+  .kicker{
+    font-family:"Segoe UI",system-ui,sans-serif;font-size:.74rem;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--muted);font-weight:600;margin:.2rem 0 1.4rem;
+  }
+  p{margin:0 0 1.1em}
+  section p, section li{color:var(--ink-soft)}
+  a{color:var(--accent);text-underline-offset:2px;text-decoration-thickness:1px}
+  strong{color:var(--ink);font-weight:600}
+  ul,ol{margin:0 0 1.2em;padding-left:1.3em}
+  li{margin:.3em 0}
+  hr.rule{border:0;height:1px;background:var(--hairline);margin:3rem 0 0}
+
+  /* ------- Pull quote ------- */
+  blockquote{
+    margin:1.8rem 0;padding:.2rem 0 .2rem 1.4rem;border-left:3px solid var(--accent);
+    font-size:1.3rem;line-height:1.4;font-style:italic;color:var(--ink);
+  }
+  blockquote cite{
+    display:block;margin-top:.6rem;font-size:.82rem;font-style:normal;color:var(--muted);
+    font-family:"Segoe UI",system-ui,sans-serif;letter-spacing:.02em;
+  }
+  blockquote cite::before{content:"— "}
+
+  /* ------- Callout / definitions ------- */
+  .callout{
+    background:var(--surface);border:1px solid var(--hairline);border-left:3px solid var(--accent);
+    border-radius:0 10px 10px 0;padding:1.1rem 1.3rem;margin:1.6rem 0;box-shadow:var(--shadow);
+  }
+  .callout .h{
+    font-family:"Segoe UI",system-ui,sans-serif;font-weight:700;font-size:.78rem;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--accent);margin-bottom:.4rem;
+  }
+  .callout.warn{border-left-color:var(--amber)}
+  .callout.warn .h{color:var(--amber)}
+  .callout p:last-child{margin-bottom:0}
+
+  /* ------- Code ------- */
+  pre{
+    background:var(--surface);border:1px solid var(--hairline);border-radius:10px;
+    padding:1rem 1.2rem;overflow-x:auto;margin:1.4rem 0;box-shadow:var(--shadow);
+  }
+  pre code{font-family:"Cascadia Code","SF Mono",Consolas,monospace;font-size:.86rem;line-height:1.6;color:var(--ink)}
+  code:not(pre code){
+    font-family:"Cascadia Code","SF Mono",Consolas,monospace;font-size:.85em;
+    background:var(--surface-2);padding:.1em .4em;border-radius:5px;color:var(--ink);
+  }
+  .tok-k{color:var(--accent);font-weight:600}
+  .tok-s{color:var(--amber)}
+  .tok-c{color:var(--muted);font-style:italic}
+
+  /* ------- Diagram ------- */
+  figure{margin:1.8rem 0}
+  figure.diagram{
+    background:var(--surface);border:1px solid var(--hairline);border-radius:14px;padding:1.6rem 1.4rem 1.3rem;
+    box-shadow:var(--shadow);
+  }
+  .flowlabel{
+    font-family:"Segoe UI",system-ui,sans-serif;font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;
+    font-weight:700;color:var(--muted);margin-bottom:.7rem;display:flex;align-items:center;gap:.6em;
+  }
+  .flowlabel.after{color:var(--accent)}
+  .flow{display:flex;align-items:stretch;gap:.5rem;overflow-x:auto;padding-bottom:.4rem}
+  .flow + .flowlabel{margin-top:1.5rem}
+  .node{
+    font-family:"Segoe UI",system-ui,sans-serif;font-size:.8rem;font-weight:600;color:var(--ink);
+    background:var(--surface-2);border:1px solid var(--hairline-strong);border-radius:9px;
+    padding:.55rem .7rem;white-space:nowrap;display:flex;align-items:center;text-align:center;line-height:1.2;
+  }
+  .node.db{background:var(--wash-strong);border-color:var(--accent);color:var(--ink)}
+  .node.wall{
+    background:transparent;border:2px dashed var(--accent);color:var(--accent);font-weight:700;letter-spacing:.02em;
+  }
+  .node.ghost{opacity:.55}
+  .node small{display:block;font-weight:400;color:var(--muted);font-size:.68rem;letter-spacing:.02em}
+  .arrow{display:flex;align-items:center;color:var(--faint);font-size:1rem;flex:none}
+  .flowcap{
+    text-align:center;font-style:italic;color:var(--muted);font-size:.92rem;margin-top:1.2rem;
+    padding-top:1rem;border-top:1px dashed var(--hairline-strong);
+  }
+  figcaption{font-family:"Segoe UI",system-ui,sans-serif;font-size:.8rem;color:var(--muted);margin-top:.7rem;text-align:center}
+
+  /* ------- Generic data tables ------- */
+  .tablecard{
+    margin:1.6rem 0;border:1px solid var(--hairline);border-radius:12px;overflow:hidden;box-shadow:var(--shadow);
+    background:var(--surface);
+  }
+  .tscroll{overflow-x:auto}
+  table{border-collapse:separate;border-spacing:0;width:100%;font-size:.9rem}
+  .resp table{min-width:520px}
+  th,td{
+    font-family:"Segoe UI",system-ui,sans-serif;text-align:left;padding:.7rem .9rem;
+    border-bottom:1px solid var(--hairline);vertical-align:top;
+  }
+  thead th{
+    font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700;
+    background:var(--surface-2);position:sticky;top:0;
+  }
+  tbody th{font-weight:600;color:var(--ink)}
+  tbody tr:last-child th,tbody tr:last-child td{border-bottom:0}
+  td.num,th.num{font-variant-numeric:tabular-nums;font-family:"Cascadia Code",Consolas,monospace;font-size:.82rem}
+  .t-trad{color:var(--muted)}
+  .t-zero{color:var(--ink)}
+
+  /* ------- Matrix ------- */
+  .matrix table{min-width:900px;font-size:.82rem}
+  .matrix thead th{text-align:center;white-space:nowrap}
+  .matrix thead th:first-child{text-align:left}
+  .matrix tbody th{
+    position:sticky;left:0;background:var(--surface);z-index:2;min-width:150px;
+    box-shadow:1px 0 0 var(--hairline);
+  }
+  .matrix td{text-align:center;color:var(--ink-soft);white-space:nowrap}
+  .matrix tbody tr:nth-child(even) th,.matrix tbody tr:nth-child(even) td{background:var(--surface-2)}
+  .matrix tbody tr:hover th,.matrix tbody tr:hover td{background:var(--wash)}
+  .d{display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:-1px}
+  .d.f{background:var(--accent);border:1px solid var(--accent)}
+  .d.p{border:1.5px solid var(--amber);background:linear-gradient(90deg,var(--amber) 50%,transparent 50%)}
+  .d.n{border:1.5px solid var(--dot-none-bd);background:transparent}
+  .legend{
+    display:flex;flex-wrap:wrap;gap:1.1rem;padding:.85rem 1rem;font-family:"Segoe UI",system-ui,sans-serif;
+    font-size:.78rem;color:var(--muted);border-bottom:1px solid var(--hairline);background:var(--surface-2);
+  }
+  .legend span{display:inline-flex;align-items:center;gap:.45em}
+
+  /* ------- Pros / cons ------- */
+  .verdict{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:1.6rem 0}
+  @media (max-width:620px){.verdict{grid-template-columns:1fr}}
+  .col{background:var(--surface);border:1px solid var(--hairline);border-radius:12px;padding:1.2rem 1.3rem;box-shadow:var(--shadow)}
+  .col h3{margin:0 0 .8rem;font-size:.82rem;letter-spacing:.1em;text-transform:uppercase}
+  .col.pro h3{color:var(--accent)}
+  .col.con h3{color:var(--amber)}
+  .col ul{list-style:none;margin:0;padding:0}
+  .col li{position:relative;padding-left:1.5em;font-size:.92rem;margin:.55em 0;color:var(--ink-soft)}
+  .col li b{color:var(--ink)}
+  .col.pro li::before{content:"";position:absolute;left:0;top:.55em;width:9px;height:9px;border-radius:50%;background:var(--accent)}
+  .col.con li::before{content:"";position:absolute;left:.1em;top:.55em;width:9px;height:2px;background:var(--amber);border-radius:2px}
+
+  /* ------- Footnote / references ------- */
+  .refs{margin-top:1rem}
+  .refs ol{padding-left:1.4em}
+  .refs li{font-family:"Segoe UI",system-ui,sans-serif;font-size:.85rem;color:var(--muted);margin:.5em 0}
+  footer{border-top:1px solid var(--hairline);margin-top:3rem;padding-top:1.6rem;color:var(--muted)}
+  footer p{font-family:"Segoe UI",system-ui,sans-serif;font-size:.82rem;color:var(--muted)}
+
+  ::selection{background:var(--wash-strong)}
+  a:focus-visible,nav.toc a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+</style>
+</head>
+<body>
+<header class="paper-head">
+  <div class="head-inner wrap">
+    <div class="eyebrow sans rise">Architecture Review &middot; Backend-as-a-Service</div>
+    <h1 class="rise d1">The Zero-Server Stack</h1>
+    <p class="subtitle rise d2">How a static page, a managed database, and a wall replaced the web server &mdash; and where that trade still doesn&rsquo;t hold.</p>
+    <div class="byline sans rise d3">
+      <span><b>Topic</b> &nbsp;Serverless web application architecture</span>
+      <span><b>Audience</b> &nbsp;Engineers &amp; technical decision-makers</span>
+      <span><b>Revised</b> &nbsp;July 2026</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div class="abstract rise d4">
+    <span class="lbl sans">Abstract</span>
+    <p class="lead">A large and very common class of web application no longer needs a web server. When the frontend is a set of static files, the database is fully managed, and access control is enforced <em>inside the data layer</em> rather than in application code, the browser can talk almost directly to the database &mdash; with a security &ldquo;wall&rdquo; in between deciding what each request is allowed to see. This paper describes that pattern, which we call the <strong>zero-server stack</strong>; explains the mechanism that makes it safe; weighs its genuine advantages against its real limitations; and surveys ten managed backends that implement it. The conclusion is deliberately modest: the pattern is not the end of servers, but a sensible new <em>default</em> for applications that are mostly create-read-update-delete with accounts and live updates. It is, in the words of the source it draws on, &ldquo;a great default &mdash; not a religion.&rdquo;</p>
+  </div>
+
+  <nav class="toc">
+    <div class="lbl sans">Contents</div>
+    <ol>
+      <li><a href="#intro">The shift, in one picture</a></li>
+      <li><a href="#how">How the pattern works</a></li>
+      <li><a href="#wall">The wall: security by row, not by secrecy</a></li>
+      <li><a href="#pros-cons">Where it wins, where it hurts</a></li>
+      <li><a href="#options">The options: ten managed backends</a></li>
+      <li><a href="#cost">What it actually costs</a></li>
+      <li><a href="#guide">A decision guide</a></li>
+      <li><a href="#in-practice">In practice: how Peek uses this</a></li>
+      <li><a href="#conclusion">Conclusion</a></li>
+    </ol>
+  </nav>
+
+  <hr class="rule">
+
+  <!-- 1 -->
+  <section id="intro">
+    <h2><span class="num sans">01</span>The shift, in one picture</h2>
+    <p class="kicker sans">The same job, half the plumbing</p>
+    <p>For most of the web&rsquo;s history, serving an application meant running a fleet of machines. A visitor&rsquo;s request travelled through a content-delivery network to a load balancer, which spread traffic across two or more web servers, which in turn queried a database. Each layer had to be provisioned, patched, scaled, and watched. The web server, in particular, did a great deal of quiet work: it held secrets, checked who you were, decided what you could see, ran scheduled jobs, received webhooks, and wrote logs.</p>
+    <p>The zero-server stack asks a blunt question about that machinery: <strong>what if we deleted the web server and let the browser talk to the database directly?</strong> The answer, for a surprising range of applications, is that everything still works &mdash; provided each job the server used to do is reassigned to a component that can do it more cheaply.</p>
+
+    <figure class="diagram">
+      <div class="flowlabel sans">Before &middot; Traditional stack</div>
+      <div class="flow">
+        <div class="node">Browser</div>
+        <div class="arrow" aria-hidden="true">&rarr;</div>
+        <div class="node">CDN</div>
+        <div class="arrow" aria-hidden="true">&rarr;</div>
+        <div class="node">Load<br>balancer</div>
+        <div class="arrow" aria-hidden="true">&rarr;</div>
+        <div class="node">Web server<small>&times;2, patched</small></div>
+        <div class="arrow" aria-hidden="true">&rarr;</div>
+        <div class="node db">Database</div>
+      </div>
+      <div class="flowlabel after sans">After &middot; Zero-server stack</div>
+      <div class="flow">
+        <div class="node">Browser<small>static files, free CDN</small></div>
+        <div class="arrow" aria-hidden="true">&rarr;</div>
+        <div class="node wall">The&nbsp;wall<small>row-level security</small></div>
+        <div class="arrow" aria-hidden="true">&rarr;</div>
+        <div class="node db">Managed<br>database</div>
+        <div class="arrow" aria-hidden="true">&nbsp;</div>
+        <div class="node ghost">Edge function<small>only when a secret is needed</small></div>
+      </div>
+      <div class="flowcap">&ldquo;The same job. Half the plumbing.&rdquo;</div>
+    </figure>
+
+    <p>Three things had to mature before this became reasonable. Managed databases now ship with authentication, file storage, real-time subscriptions, and a scheduler built in. Databases can enforce access rules per row, so a client can be handed a raw query interface safely. And static hosting on a global CDN &mdash; for example, GitHub Pages &mdash; became free and effortless. Put together, they let a small team ship a production application with, quite literally, no server to run.</p>
+  </section>
+
+  <!-- 2 -->
+  <section id="how">
+    <h2><span class="num sans">02</span>How the pattern works</h2>
+    <p class="kicker sans">Reassigning the server&rsquo;s jobs</p>
+    <p>The pattern is best understood as a redistribution of responsibilities. Nothing the server did disappears; each duty simply moves to a component better suited to it. The frontend ships as static files. The database does the data work. Two new helpers &mdash; the <strong>wall</strong> (row-level security) and <strong>edge functions</strong> (small serverless functions that run only on demand) &mdash; absorb the rest.</p>
+
+    <div class="tablecard resp">
+      <div class="tscroll">
+        <table>
+          <thead>
+            <tr><th>The job</th><th>Used to live in&hellip;</th><th>Now handled by&hellip;</th></tr>
+          </thead>
+          <tbody>
+            <tr><th>Holding secrets</th><td class="t-trad">Web server</td><td class="t-zero">Edge functions</td></tr>
+            <tr><th>Authentication</th><td class="t-trad">Custom auth server</td><td class="t-zero">Built-in accounts system</td></tr>
+            <tr><th>Access control</th><td class="t-trad">Application logic</td><td class="t-zero">Row-level security (the wall)</td></tr>
+            <tr><th>Scheduled tasks</th><td class="t-trad">Cron servers</td><td class="t-zero">Database scheduler</td></tr>
+            <tr><th>Webhooks</th><td class="t-trad">Server endpoints</td><td class="t-zero">Edge functions with public URLs</td></tr>
+            <tr><th>Logging</th><td class="t-trad">Server files</td><td class="t-zero">Database tables</td></tr>
+            <tr><th>SEO / crawlable pages</th><td class="t-trad">Server-side rendering</td><td class="t-zero">Pre-built static HTML</td></tr>
+            <tr><th>Real-time updates</th><td class="t-trad">Messaging servers</td><td class="t-zero">Native database subscriptions</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h3>Edge functions: hired help that clocks in only when needed</h3>
+    <p>The browser cannot be trusted with secrets. Anything shipped in JavaScript is readable by anyone, so a payment provider&rsquo;s secret key or an email service&rsquo;s credentials can never sit in client code. Edge functions solve this: they are small pieces of server-side code that spin up on demand, do the one privileged thing, and disappear. They are also where <strong>webhooks</strong> land &mdash; when a payment processor needs to &ldquo;phone home&rdquo; after a charge, it calls a public edge-function URL, which verifies the caller before acting. You pay for the milliseconds they run, not for a machine that idles.</p>
+
+    <h3>The built-ins: auth, real-time, cron, storage, logs</h3>
+    <p>The remaining duties are simply features of the managed backend. <strong>Authentication</strong> is built in &mdash; email-and-password, magic links, and &ldquo;Sign in with Google&rdquo; without writing an auth server. <strong>Real-time</strong> is native: when a row changes, every browser subscribed to it hears about the change, which is enough to build chat, live scores, or presence indicators. A built-in <strong>scheduler</strong> lets the database &ldquo;wake itself up on a timer&rdquo; for cleanup, reports, and reminders. <strong>File storage</strong> sits alongside the data, and <strong>logs</strong> are just another table &mdash; searchable with the same tools as everything else.</p>
+  </section>
+
+  <!-- 3 -->
+  <section id="wall">
+    <h2><span class="num sans">03</span>The wall: security by row, not by secrecy</h2>
+    <p class="kicker sans">You don&rsquo;t hide the queries &mdash; you guard the rows</p>
+    <p>The obvious objection to letting a browser talk to a database is security. If the client can send queries, surely it can read anything? The answer is the single most important idea in the whole pattern, and it inverts the usual instinct. You do not try to hide what queries are possible. You assume the attacker can see everything about the shape of your data, and you guard the rows themselves.</p>
+
+    <blockquote>You don&rsquo;t hide the queries. You guard the rows.<cite>The Zero-Server Stack</cite></blockquote>
+
+    <p>Because the browser talks straight to the database, a number of things ship in plain view, and the design treats that as fine:</p>
+    <div class="verdict">
+      <div class="col pro">
+        <h3>Public by design</h3>
+        <ul>
+          <li>The public <b>&ldquo;anon&rdquo; key</b> in the JavaScript</li>
+          <li>Your <b>table and column names</b></li>
+          <li>The <b>structure</b> of every query</li>
+          <li>Any query the <b>rules actually permit</b></li>
+        </ul>
+      </div>
+      <div class="col con">
+        <h3>Never exposed</h3>
+        <ul>
+          <li>The <b>master key</b> (service role)</li>
+          <li>API <b>secrets</b> for payments and email</li>
+          <li>Optionally, the <b>query surface</b> itself &mdash; locked to named actions</li>
+        </ul>
+      </div>
+    </div>
+
+    <p>The guarding is done by <strong>Row-Level Security (RLS)</strong>: rules attached to each table that the database evaluates on every request. A policy is a small condition. Here, a user may select a post only when it is their own:</p>
+    <pre><code><span class="tok-k">create policy</span> <span class="tok-s">"own posts"</span> <span class="tok-k">on</span> posts
+  <span class="tok-k">for</span> select <span class="tok-k">using</span> ( auth.uid() = user_id );</code></pre>
+    <p>The elegance is in what happens to an attacker. Their query still runs &mdash; the database does not reject it with an error that reveals structure &mdash; it simply <em>&ldquo;comes back with only their own rows.&rdquo;</em> The public key opens the door; the wall decides what leaves with them.</p>
+
+    <div class="callout warn">
+      <div class="h sans">The mistake that burns people</div>
+      <p>Turn the wall on for <strong>every</strong> table. A table with the rules switched <code>off</code> is a fully public table. RLS is opt-in per table, so a single forgotten toggle exposes everything in it &mdash; there is no second layer of application code behind it to catch the miss. This is the pattern&rsquo;s sharpest edge, and it is discussed again among the limitations below.</p>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section id="pros-cons">
+    <h2><span class="num sans">04</span>Where it wins, where it hurts</h2>
+    <p class="kicker sans">A balanced ledger</p>
+    <p>The advantages are real and mostly economic; the limitations are real and mostly architectural. An honest evaluation keeps both columns in view.</p>
+
+    <div class="verdict">
+      <div class="col pro">
+        <h3>Where it wins</h3>
+        <ul>
+          <li><b>Cost approaches zero.</b> A free CDN plus a free or near-free database tier replaces a monthly infrastructure bill.</li>
+          <li><b>No operations burden.</b> Nothing to patch, scale, or wake at 3&nbsp;a.m. The provider owns uptime.</li>
+          <li><b>Speed to market.</b> Auth, storage, real-time, and cron arrive on day one instead of being built.</li>
+          <li><b>Fewer moving parts.</b> No load balancer, no server fleet, no deploy pipeline for a backend that no longer exists.</li>
+          <li><b>Security in one auditable place.</b> Access rules live with the data, not scattered across endpoints.</li>
+          <li><b>Real-time is free.</b> Live updates are a native feature rather than a second system to run.</li>
+        </ul>
+      </div>
+      <div class="col con">
+        <h3>Where it hurts</h3>
+        <ul>
+          <li><b>RLS is a single point of failure.</b> One un-walled table leaks everything in it; the safety net of server-side code is gone.</li>
+          <li><b>The query surface is public.</b> Schema and query shape are visible, inviting probing; some teams lock the client to named actions to compensate.</li>
+          <li><b>Vendor lock-in.</b> Auth, rules, and functions are provider-shaped. Open-source, self-hostable options soften this; closed ones do not.</li>
+          <li><b>Cold starts &amp; idle sleep.</b> Free database tiers may pause when idle, and edge functions can lag on first call.</li>
+          <li><b>Cost cliffs at scale.</b> Generous free tiers give way to usage-based pricing; egress and function volume can climb quickly.</li>
+          <li><b>Heavy or long-running compute doesn&rsquo;t fit.</b> Edge functions are short-lived; there is no always-on process to lean on.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>The three jobs that still want a real server</h3>
+    <p>The source document is candid about its own boundaries, naming three cases where a traditional server remains the right tool. This paper endorses that list and treats it as the core &ldquo;when not to&rdquo;:</p>
+    <ol>
+      <li><strong>Fresh-per-visit page rendering.</strong> When each request must assemble bespoke HTML on the server &mdash; common in large content and commerce platforms &mdash; pre-built static files are not enough.</li>
+      <li><strong>Always-on background processes.</strong> Long-running, stateful work &mdash; a queue consumer, a game server, a persistent socket hub &mdash; has no home in functions that clock in and out.</li>
+      <li><strong>Network-level gatekeeping.</strong> Custom certificates, IP allow-lists, and specialised traffic rules need infrastructure you control at the network layer.</li>
+    </ol>
+    <p>To these three, add the practical caveats above &mdash; the RLS footgun, lock-in, idle behaviour, and cost cliffs &mdash; and the picture is complete: a strong default for a specific shape of app, with clearly marked edges.</p>
+  </section>
+
+  <!-- 5 -->
+  <section id="options">
+    <h2><span class="num sans">05</span>The options: ten managed backends</h2>
+    <p class="kicker sans">A snapshot, not a verdict &middot; July 2026</p>
+    <p>Many providers now implement this pattern. They differ most in three places: the <strong>database model</strong> (relational SQL versus NoSQL documents), whether they are <strong>open-source and self-hostable</strong> (the escape hatch from lock-in), and their <strong>idle behaviour</strong> on free tiers. The matrix below reproduces the comparison from the source document. Feature tables age quickly, so read it as a starting map rather than a ranking.</p>
+
+    <div class="tablecard matrix">
+      <div class="legend sans">
+        <span><span class="d f"></span> Full support</span>
+        <span><span class="d p"></span> Partial / conditional</span>
+        <span><span class="d n"></span> Not available</span>
+      </div>
+      <div class="tscroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Capability</th>
+              <th scope="col">Supabase</th>
+              <th scope="col">Appwrite</th>
+              <th scope="col">Nhost</th>
+              <th scope="col">Convex</th>
+              <th scope="col">PocketBase</th>
+              <th scope="col">Firebase</th>
+              <th scope="col">Amplify</th>
+              <th scope="col">Back4App</th>
+              <th scope="col">Backendless</th>
+              <th scope="col">Directus</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Core model</th>
+              <td>PostgreSQL</td><td>NoSQL docs</td><td>PostgreSQL</td><td>Reactive TS</td><td>SQLite</td>
+              <td>Firestore</td><td>DynamoDB</td><td>Parse/Mongo</td><td>SQL tables</td><td>Wraps SQL</td></tr>
+            <tr><th scope="row">Open source</th>
+              <td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td>
+              <td><span class="d n" role="img" aria-label="No"></span></td><td><span class="d p" role="img" aria-label="Partial"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d n" role="img" aria-label="No"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td></tr>
+            <tr><th scope="row">Self-hostable</th>
+              <td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td>
+              <td><span class="d n" role="img" aria-label="No"></span></td><td><span class="d n" role="img" aria-label="No"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d p" role="img" aria-label="Partial"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td></tr>
+            <tr><th scope="row">Query interface</th>
+              <td>REST+GraphQL</td><td>SDK/REST</td><td>GraphQL</td><td>TS functions</td><td>REST</td>
+              <td>SDK</td><td>GraphQL</td><td>REST/GraphQL</td><td>REST/SDK</td><td>REST+GraphQL</td></tr>
+            <tr><th scope="row">Accounts &amp; auth</th>
+              <td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d p" role="img" aria-label="Partial"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td>
+              <td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td></tr>
+            <tr><th scope="row">Record-level access</th>
+              <td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d p" role="img" aria-label="Partial"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td>
+              <td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td></tr>
+            <tr><th scope="row">Real-time subscriptions</th>
+              <td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td>
+              <td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td></tr>
+            <tr><th scope="row">File storage</th>
+              <td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td>
+              <td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td></tr>
+            <tr><th scope="row">Functions &mdash; free, no card</th>
+              <td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d p" role="img" aria-label="Partial"></span></td>
+              <td><span class="d p" role="img" aria-label="Partial"></span></td><td><span class="d p" role="img" aria-label="Partial"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d p" role="img" aria-label="Partial"></span></td></tr>
+            <tr><th scope="row">Full-text search</th>
+              <td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d p" role="img" aria-label="Partial"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d p" role="img" aria-label="Partial"></span></td>
+              <td><span class="d n" role="img" aria-label="No"></span></td><td><span class="d n" role="img" aria-label="No"></span></td><td><span class="d p" role="img" aria-label="Partial"></span></td><td><span class="d p" role="img" aria-label="Partial"></span></td><td><span class="d p" role="img" aria-label="Partial"></span></td></tr>
+            <tr><th scope="row">Vector / AI search</th>
+              <td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d n" role="img" aria-label="No"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d n" role="img" aria-label="No"></span></td>
+              <td><span class="d p" role="img" aria-label="Partial"></span></td><td><span class="d p" role="img" aria-label="Partial"></span></td><td><span class="d n" role="img" aria-label="No"></span></td><td><span class="d n" role="img" aria-label="No"></span></td><td><span class="d p" role="img" aria-label="Partial"></span></td></tr>
+            <tr><th scope="row">Scheduled jobs / cron</th>
+              <td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td>
+              <td><span class="d p" role="img" aria-label="Partial"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td></tr>
+            <tr><th scope="row">Local dev / emulator</th>
+              <td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td>
+              <td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d p" role="img" aria-label="Partial"></span></td><td><span class="d p" role="img" aria-label="Partial"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td></tr>
+            <tr><th scope="row">Free DB size</th>
+              <td class="num">500 MB</td><td class="num">Unltd docs</td><td class="num">1 GB</td><td class="num">~0.5 GB</td><td class="num">Your disk</td>
+              <td class="num">1 GB</td><td class="num">25 GB</td><td class="num">250 MB</td><td class="num">1 GB</td><td class="num">Your disk</td></tr>
+            <tr><th scope="row">No credit card</th>
+              <td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td>
+              <td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d n" role="img" aria-label="No"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td></tr>
+            <tr><th scope="row">Never sleeps when idle</th>
+              <td><span class="d n" role="img" aria-label="No"></span></td><td><span class="d n" role="img" aria-label="No"></span></td><td><span class="d n" role="img" aria-label="No"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td>
+              <td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d p" role="img" aria-label="Partial"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td><td><span class="d f" role="img" aria-label="Yes"></span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h3>Reading the field</h3>
+    <p><strong>The PostgreSQL family &mdash; Supabase and Nhost.</strong> Both put a real relational database in front of the browser, with row-level security as the wall. Supabase exposes REST and GraphQL and adds full-text and vector search; Nhost leans GraphQL-first. These are the most direct embodiment of the pattern described here.</p>
+    <p><strong>The self-host-first pair &mdash; PocketBase and Directus.</strong> PocketBase is a single executable over SQLite that never sleeps and stores as much as your disk allows &mdash; ideal for small, self-run apps. Directus wraps an existing SQL database, making it attractive when the data already exists.</p>
+    <p><strong>The reactive outlier &mdash; Convex.</strong> Rather than exposing a query language, Convex runs typed TypeScript functions and re-runs them reactively when data changes. Its access model is function-shaped rather than row-shaped (hence the partial marks on auth and record-level access), a different but coherent take on the same problem.</p>
+    <p><strong>The document store &mdash; Appwrite.</strong> A mature open-source, self-hostable backend built around NoSQL documents, strong on auth and storage, lighter on search.</p>
+    <p><strong>The incumbents &mdash; Firebase, Amplify, Back4App, Backendless.</strong> Firebase (Google) is the most battle-tested and never sleeps, but is closed and cannot be self-hosted, and its search is weak. Amplify sits on AWS DynamoDB with the largest free database allotment (25&nbsp;GB) but is the only option here that requires a credit card. Back4App (a hosted Parse) and Backendless (low-code) round out the field.</p>
+    <p>Two columns deserve special attention when choosing. <strong>Idle sleep</strong> splits the field: Convex, PocketBase, Firebase, Amplify, Backendless, and Directus stay awake, while Supabase, Appwrite, and Nhost may pause a free project until the next request &mdash; a first-visit delay that matters for low-traffic apps. And <strong>open-source with self-hosting</strong> &mdash; true for Supabase, Appwrite, Nhost, Convex, PocketBase, Back4App, and Directus &mdash; is the practical antidote to lock-in: if the hosted tier disappoints, the same stack can run on your own machine.</p>
+  </section>
+
+  <!-- 6 -->
+  <section id="cost">
+    <h2><span class="num sans">06</span>What it actually costs</h2>
+    <p class="kicker sans">The invoice, and the part that isn&rsquo;t on it</p>
+    <p>The illustrative figures below compare a small-to-mid production application under each model. They are order-of-magnitude, not quotes, but the gap is the point.</p>
+
+    <div class="tablecard resp">
+      <div class="tscroll">
+        <table>
+          <thead><tr><th>Line item</th><th class="num">Traditional / month</th><th class="num">Zero-server / month</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Front-end hosting</th><td class="num t-trad">$20&ndash;60</td><td class="num t-zero">$0 &middot; GitHub Pages</td></tr>
+            <tr><th scope="row">Application servers</th><td class="num t-trad">$40&ndash;120</td><td class="num t-zero">&mdash;</td></tr>
+            <tr><th scope="row">Load balancer</th><td class="num t-trad">$18</td><td class="num t-zero">&mdash;</td></tr>
+            <tr><th scope="row">Database</th><td class="num t-trad">$50&ndash;200</td><td class="num t-zero">$0&ndash;25 &middot; all-in</td></tr>
+            <tr><th scope="row">Monitoring</th><td class="num t-trad">$0&ndash;50</td><td class="num t-zero">included</td></tr>
+            <tr><th scope="row"><b>Total</b></th><td class="num t-trad"><b>$150&ndash;400+</b></td><td class="num t-zero"><b>$0&ndash;25</b></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <blockquote>The biggest saving isn&rsquo;t on the invoice &mdash; it&rsquo;s the person-hours that never get spent patching, scaling, and firefighting infrastructure.<cite>The Zero-Server Stack</cite></blockquote>
+
+    <p>This is the argument&rsquo;s strongest form. For a small team, the dollar difference is pleasant; the disappearance of the on-call rotation, the patch cycle, and the scaling scramble is transformative. It is worth remembering the other side of the curve, though: usage-based pricing means a sudden success &mdash; a viral moment, a data-heavy feature &mdash; can move a project off the free tier quickly, and egress and function volume are the usual culprits. The model saves the most for applications that are modest in scale or predictable in growth.</p>
+  </section>
+
+  <!-- 7 -->
+  <section id="guide">
+    <h2><span class="num sans">07</span>A decision guide</h2>
+    <p class="kicker sans">Choosing, in one page</p>
+    <div class="verdict">
+      <div class="col pro">
+        <h3>Reach for zero-server when&hellip;</h3>
+        <ul>
+          <li>The app is mostly <b>CRUD + accounts + live updates</b></li>
+          <li>You want <b>zero upfront infrastructure cost</b></li>
+          <li>There is <b>no dedicated operations staff</b></li>
+          <li><b>Speed to market</b> outranks bespoke control</li>
+          <li>Traffic is <b>modest or predictable</b></li>
+        </ul>
+      </div>
+      <div class="col con">
+        <h3>Keep (or add) a server when&hellip;</h3>
+        <ul>
+          <li>Pages must be <b>server-rendered fresh</b> per visit</li>
+          <li>You run <b>heavy or always-on</b> background work</li>
+          <li>You need <b>network-level control</b> &mdash; certs, IP rules</li>
+          <li>A <b>deliberate service layer</b> is part of the design</li>
+          <li>Compliance demands <b>data residency</b> you control</li>
+        </ul>
+      </div>
+    </div>
+    <p>A common and sensible outcome is <em>hybrid</em>: run the zero-server stack as the default for the bulk of the application, and stand up a single small server only for the one job &mdash; a rendering path, a worker, a gateway &mdash; that genuinely needs it. The pattern does not have to be all-or-nothing to pay for itself.</p>
+  </section>
+
+  <!-- 8 -->
+  <section id="in-practice">
+    <h2><span class="num sans">08</span>In practice: how Peek uses this</h2>
+    <p class="kicker sans">A case study &mdash; and where it goes further</p>
+    <p><strong>Peek</strong> &mdash; the app this document ships alongside &mdash; is a near-literal instance of the zero-server stack: one static page on GitHub Pages talking to a single Supabase project, with row-level security as the only gatekeeper. There is no application server and, tellingly, not even an edge function &mdash; the app holds no server-side secret, so it never needs one. It also does one thing the base pattern doesn&rsquo;t ask for, and that twist is the most interesting part.</p>
+
+    <blockquote>Your full-resolution photos never touch a server.<cite>Peek README</cite></blockquote>
+
+    <div class="tablecard resp">
+      <div class="tscroll">
+        <table>
+          <thead><tr><th>Pattern piece</th><th>In Peek</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Static frontend</th><td>One <code>index.html</code> plus plain ES modules &mdash; no framework, no build step &mdash; installable as a PWA, served free by GitHub Pages.</td></tr>
+            <tr><th scope="row">Managed database</th><td>A single Supabase Postgres project. The public &ldquo;publishable&rdquo; key ships right in <code>core.js</code>, exactly as the model expects.</td></tr>
+            <tr><th scope="row">The wall (RLS)</th><td>Every table has row-level security switched on; the policies in <code>schema.sql</code> are the <em>entire</em> access-control layer.</td></tr>
+            <tr><th scope="row">Authentication</th><td>Supabase Auth (email + password). A database trigger auto-creates the user&rsquo;s profile row the moment they sign up.</td></tr>
+            <tr><th scope="row">Real-time</th><td>Supabase Realtime: the feed, likes, comments, and the notification badge update live from Postgres changes; a presence channel powers &ldquo;who&rsquo;s online.&rdquo;</td></tr>
+            <tr><th scope="row">Edge functions</th><td>None. With no secret to guard, the one server-shaped helper the pattern allows simply isn&rsquo;t needed.</td></tr>
+            <tr><th scope="row">File storage</th><td>Deliberately unused &mdash; which is the twist.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h3>The wall, doing real work</h3>
+    <p>The paper&rsquo;s one-line policy grows up here. A post is visible only if it is yours, its author is public, or you are an <em>accepted</em> follower &mdash; private accounts and all &mdash; and that rule lives entirely in the database:</p>
+    <pre><code><span class="tok-c">-- yours, or a public author, or an accepted follower</span>
+<span class="tok-k">create policy</span> <span class="tok-s">"posts_select"</span> <span class="tok-k">on</span> posts <span class="tok-k">for</span> select <span class="tok-k">using</span> (
+  auth.uid() = user_id
+  <span class="tok-k">or exists</span> (<span class="tok-k">select</span> 1 <span class="tok-k">from</span> profiles p
+             <span class="tok-k">where</span> p.id = posts.user_id <span class="tok-k">and</span> p.is_private = <span class="tok-k">false</span>)
+  <span class="tok-k">or exists</span> (<span class="tok-k">select</span> 1 <span class="tok-k">from</span> follows f
+             <span class="tok-k">where</span> f.following_id = posts.user_id
+               <span class="tok-k">and</span> f.follower_id = auth.uid() <span class="tok-k">and</span> f.status = <span class="tok-s">'accepted'</span>)
+);</code></pre>
+    <p>The browser may send whatever query it likes; the wall returns only the rows the viewer is entitled to. Peek even stretches RLS onto real-time itself &mdash; private group-chat channels named <code>group:&lt;id&gt;</code> are made member-only by a policy on the Realtime message table, so a stranger can&rsquo;t subscribe to a group they aren&rsquo;t in.</p>
+
+    <h3>Pushing past the pattern: photos that never touch a server</h3>
+    <p>The stock pattern would drop uploaded images into the backend&rsquo;s file storage. Peek refuses. Only a <strong>~32-pixel blurred preview</strong> &mdash; a tiny base64 string &mdash; is stored in Postgres; the full-resolution image lives <em>only in the author&rsquo;s browser</em> (IndexedDB) and streams browser-to-browser over a WebRTC data channel when a viewer is online. Even the WebRTC signaling rides Supabase Realtime, so no server ever sits in the media path.</p>
+    <p>This engineers out of existence the paper&rsquo;s sharpest cost worry &mdash; <em>storage and egress at scale</em>. Because the database only ever holds text and thumbnails, the whole app sits inside Supabase&rsquo;s free 500&nbsp;MB tier essentially forever, no matter how many megapixels its users shoot.</p>
+
+    <h3>The bill for that twist</h3>
+    <p>The saving is paid for in exactly the currency the limitations named. Peer-to-peer is <strong>live-only</strong>: if the author is offline the post stays blurred, and direct messages and calls need both people present and keep no history. And with only public STUN and no TURN relay, the peer connections &ldquo;often fail on mobile cellular data&rdquo; behind carrier-grade NAT. The Supabase-backed half &mdash; feed, likes, comments, profiles, discovery &mdash; works everywhere; the peer-to-peer half is precisely where one small piece of real infrastructure (a TURN server) would be the honest fix.</p>
+    <p>That is the whole thesis in miniature: build on the zero-server default and follow it almost to the letter &mdash; no server, no edge function, not even file storage &mdash; while keeping one clearly-bounded place in view where adding a server does the single job the stack can&rsquo;t.</p>
+  </section>
+
+  <!-- 9 -->
+  <section id="conclusion">
+    <h2><span class="num sans">09</span>Conclusion</h2>
+    <p class="kicker sans">A great default, not a religion</p>
+    <p>&ldquo;You can delete the server&rdquo; is a provocation, and like most good provocations it is true within limits worth stating plainly. When an application is built from static files, a managed database, and a wall of row-level rules &mdash; with edge functions clocking in only for the privileged work &mdash; the traditional web server has no remaining job, and removing it removes an entire category of cost and toil. That is a genuine and welcome shift for a large slice of the applications people actually build.</p>
+    <p>It is not universal. Fresh-per-visit rendering, always-on processes, and network-level control still want real infrastructure; lock-in, the RLS footgun, idle sleep, and cost cliffs are real edges to respect. The honest framing is the one the source itself lands on, and the one this paper adopts: treat the zero-server stack as an excellent default for CRUD-with-accounts-and-live-updates, choose an open-source backend where possible to keep the exit open, turn the wall on for every table &mdash; and reach for a server only when the work in front of you is one of the few things a server still does best.</p>
+
+    <div class="refs">
+      <h3>Notes &amp; sources</h3>
+      <ol>
+        <li>Primary source: <em>The Zero-Server Stack</em> architecture document &mdash; <a href="https://jay23606.github.io/peek/arch.html">jay23606.github.io/peek/arch.html</a>. Direct quotations and the backend comparison matrix are drawn from it.</li>
+        <li>The backend comparison reflects the source&rsquo;s July 2026 snapshot. Provider free tiers, limits, and features change frequently; verify against current documentation before committing.</li>
+        <li>Cost figures are illustrative order-of-magnitude ranges for a small-to-mid production application, not vendor quotes.</li>
+        <li>&ldquo;Edge functions,&rdquo; &ldquo;the wall,&rdquo; and &ldquo;managed database&rdquo; are used generically; the canonical reference implementation of this pattern is Supabase (PostgreSQL + RLS) on a GitHub Pages front-end.</li>
+      </ol>
+    </div>
+
+    <footer>
+      <p>Prepared as an accessible research summary of the zero-server architecture pattern. Structure and analysis are original; the paradigm, the matrix, and the quoted phrases originate in the source document cited above.</p>
+    </footer>
+  </section>
+
+</main>
+</body>
+</html>
